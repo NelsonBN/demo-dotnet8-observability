@@ -1,0 +1,77 @@
+version: '3.9'
+
+
+networks:
+  demo:
+    driver: bridge
+
+services:
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: sqlserver
+    environment:
+      MSSQL_PID: Developer
+      ACCEPT_EULA: Y
+      MSSQL_SA_PASSWORD: Ab123456!
+    ports:
+      - 1433:1433
+    networks:
+      - demo
+
+  mssqltools:
+    image: mcr.microsoft.com/mssql-tools
+    container_name: mssqltools
+    volumes:
+      - ./src/Database/init-db.sql:/tmp/init-db.sql
+      - ./src/Database/init-db.sh:/tmp/init-db.sh
+    command: /bin/bash ./tmp/init-db.sh
+    networks:
+      - demo
+    depends_on:
+      - sqlserver
+
+
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: demo-prometheus
+    volumes:
+      - ./src/Prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - 9090:9090
+    networks:
+      - demo
+
+
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: grafana
+    environment:
+      TZ: Europe/Lisbon
+      GF_AUTH_ANONYMOUS_ENABLED: true # Allow anonymous access
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin # Set the role for anonymous users to Admin
+      GF_AUTH_BASIC_ENABLED: false # Disable basic auth
+    ports:
+      - 3000:3000
+    volumes:
+      - ./src/Grafana/data-source.yml:/etc/grafana/provisioning/datasources/data-source.yml # Data source configurations
+      - ./src/Grafana/dashboards:/etc/grafana/provisioning/dashboards # Folder containing dashboards
+      - ./src/Grafana/dashboard.yml:/etc/grafana/provisioning/dashboards/dashboard.yml # Dashboard configurations
+    networks:
+      - demo
+
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: technobre/demo-api
+    container_name: demo-api
+    environment:
+      CONNECTIONSTRINGS__DEFAULT: Server=sqlserver;Database=demo;User Id=sa;Password=Ab123456!;TrustServerCertificate=True;
+    ports:
+      - "5239:80"
+    networks:
+      - demo
+    depends_on:
+      - sqlserver
